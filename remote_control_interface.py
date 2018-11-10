@@ -565,3 +565,5 @@ mainWindow.mainloop()
 
 #Receive
 # "C###T###" Current and Temperature measurements
+
+
