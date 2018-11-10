@@ -1,0 +1,567 @@
+from tkinter import *
+from tkinter import scrolledtext
+from subprocess import call
+from enum import Enum
+import urllib
+from urllib import request
+import time
+import serial
+import datetime
+
+#define global variables here
+setTemp = "60.0"
+iActiDeacti = 0
+boolShutoff = 0
+boolDiag = 0
+boolStoreConf = 0
+disconnect = 0
+failed = 0
+
+temperature = 0;
+current = 0;
+
+sessionCurrentValues = 0;
+sessionNumOfMeasurements = 0
+
+class States(Enum):
+    OFF, ACTIVE, DISCONNECTED, FAILED = 1,2,3,4
+
+class Modes(Enum):
+    Inactive, Automatic, SelfTest = 1,2,3
+
+arduinoIDPath =  "/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_55639313333351D03120-if00" 
+
+#define functions here
+
+#Dropbox upload code. Gebruik dit wanneer daar waardes gestoor kan word
+################################################################################################################
+#def uploadCloud(event):
+#    f = "/home/pi/Dropbox-Uploader/dropbox_uploader.sh upload /home/pi/measurements.txt measurements.txt"
+#    call ([f], shell=True)
+################################################################################################################
+ser = serial.Serial(arduinoIDPath, baudrate=9600,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    bytesize=serial.EIGHTBITS,
+                    timeout=1
+                    ) 
+
+def commandExit(event):
+    mainWindow.destroy()
+
+def uploadCloud():
+    f = "/home/pi/Dropbox-Uploader/dropbox_uploader.sh upload /home/pi/measurements.txt measurements.txt"
+    call ([f], shell=True)
+
+def internet_on():
+    try:
+        urllib.request.urlopen('http://216.58.192.142', timeout = 1)
+        return True
+    except:
+        return False
+
+def changeTemp(event):
+    global setTemp
+    global sessionCurrentValues
+    global sessionNumOfMeasurements
+    setTemp = spinTemp.get()
+    txtDiag.insert(INSERT,"Desired temperature set to: " + setTemp + "\n\n")
+    setTempS = "S" + setTemp
+    ser.write(setTempS.encode())
+
+    global boolStoreConf
+    boolStoreConf = 1
+
+    text = spinTemp.get()
+    wFile = open('configuration.txt' , 'w')
+    wFile.write(text)
+    wFile.close()
+    
+    sessionCurrentValues = 0
+    sessionNumOfMeasurements = 0
+    btnDiagnostics.config(state=DISABLED)
+    btnActiDeactiControl.config(state=ACTIVE)
+    
+    #print(setTemp)
+
+def ActivateDeactivate(event):
+    global iActiDeacti
+    global sessionCurrentValues
+    global sessionNumOfMeasurements
+    global boolShutoff
+    global setTemp
+
+    if boolShutoff == 1:
+        boolShutoff = 0
+        serSend = "AC1"
+        ser.write(serSend.encode())
+        btnActiDeactiControl.configure(text="Deactivate Automatic Control")
+        lblAutoControl.configure(text="Automatic Control: ON", fg = "green")
+        lblHeatElementStatus.configure(text="Heat Element Status: ON", fg = "green")
+        lblPowerSupplyStatus.configure(text="Power Supply Status: ON", fg = "green")
+        txtDiag.insert(INSERT,"Automatic Control Activated\n\n")
+        
+    
+    elif iActiDeacti == 0:
+        
+        btnActiDeactiControl.configure(text="Deactivate Automatic Control")
+        lblAutoControl.configure(text="Automatic Control: ON", fg = "green")
+        lblHeatElementStatus.configure(text="Heat Element Status: ON", fg = "green")
+        serSend = "AC1"
+        ser.write(serSend.encode())
+        txtDiag.insert(INSERT,"Automatic Control Activated\n\n")
+
+        with open('configuration.txt', 'r') as rFile:
+            for line in rFile:
+                spinTemp.delete(0, "end")
+                spinTemp.insert(0, line)
+                setTemp = line
+        
+        sessionCurrentValues = 0
+        sessionNumOfMeasurements = 0
+        boolShutoff = 0
+        iActiDeacti = 1
+        
+        
+    elif iActiDeacti == 1:
+        btnActiDeactiControl.configure(text="Activate Automatic Control")
+        iActiDeacti = 0
+        lblAutoControl.configure(text="Automatic Control: OFF", fg = "darkred")
+        lblHeatElementStatus.configure(text="Heat Element Status: OFF", fg = "darkred")
+        serSend = "AC0"
+        ser.write(serSend.encode())
+        lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
+        lblCurrentTemp.configure(text = "Current Water Temperature: 0 °C")
+        txtDiag.insert(INSERT,"Automatic Control Deactivated\n\n")
+
+def ShutOff(event):
+    global boolShutoff
+    boolShutoff = 1
+    serSend = "OFF"
+    ser.write(serSend.encode())
+    txtDiag.insert(INSERT,"Heating element shut-off\n\n")
+    lblHeatElementStatus.configure(text="Heat Element Status: OFF", fg = "darkred")
+    btnActiDeactiControl.configure(text="Activate Automatic Control")
+    lblAutoControl.configure(text="Automatic Control: OFF", fg = "darkred")
+    lblPowerSupplyStatus.configure(text="Power Supply Status: OFF", fg = "darkred")
+    
+def performDiagnosis(event):
+    global boolDiag
+    global sessionCurrentValues
+    global sessionNumOfMeasurements
+    boolDiag = 1
+    txtDiag1.delete('1.0', END)
+    txtDiag.insert(INSERT,"Performing Diagnostic Functions...\n")
+    
+    year = spinYearDate.get()
+    month = spinMonthDate.get()
+
+    if month[0] == " ":
+        month = "0" + month[1]
+
+    date = year + "-" + month
+
+    numberOfMeasurements = 0
+    totalCurrent = 0
+    
+    try:
+        with open('measurements.txt', 'r') as f:
+            for line in f:
+                #print((line)[len(line)-4:len(line)-1])
+                if (line)[0:7] == date and (line)[len(line)-5:len(line)-1] == setTemp:
+
+                    #txtDiag.insert(INSERT,line[30:34] + "\n")
+                    #txtDiag.insert(INSERT,line[24:27] + "\n")
+                    actualTemp = float(line[30:34])
+
+                    if (actualTemp - float(setTemp)) < -5:
+                        txtDiag1.insert(INSERT,line)
+                        numberOfMeasurements = numberOfMeasurements + 1
+                        actualCurr = float(line[24:27])
+                        totalCurrent = totalCurrent + actualCurr
+                        
+             
+               
+            totalCurrent = totalCurrent/numberOfMeasurements
+            currSessionCurrent = sessionCurrentValues/sessionNumOfMeasurements
+            #txtDiag1.insert(INSERT,totalCurrent)
+            #txtDiag1.insert(INSERT,sessionCurrentValues/sessionNumOfMeasurements)
+
+            txtDiag.insert(INSERT,"Historical average current: " + '%.2f' % totalCurrent + "\n")
+            txtDiag.insert(INSERT,"Current session average current: " + '%.2f' % currSessionCurrent + "\n\n")
+
+            
+
+    except:
+        txtDiag.insert(INSERT,"No measurements in specified range\n\n")
+    
+
+    
+def storeConfig(event):
+    global boolStoreConf
+    boolStoreConf = 1
+
+    text = spinTemp.get()
+    wFile = open('configuration.txt' , 'w')
+    wFile.write(text)
+    wFile.close()
+
+def SelfTest(event):
+    global temperature
+    global current
+    global disconnect
+    selfT = 1
+    fTemp = float(temperature)
+    fCurr = float(current)
+
+    if fTemp >= 0:
+        txtDiag.insert(INSERT,"Temperature measurement successful\n")
+    else:
+        txtDiag.insert(INSERT,"Temperature measurement not successful\n")
+        selfT = 0
+
+    if fCurr >= 0:
+        txtDiag.insert(INSERT,"Heating element successful\n")
+    else:
+        txtDiag.insert(INSERT,"Heating element not successful\n")
+        selfT = 0
+
+    if internet_on() ==  1:
+        txtDiag.insert(INSERT,"Communications successful\n")
+    else:
+        txtDiag.insert(INSERT,"Communications not successful\n")
+        selfT = 0
+        disconnect = 1
+        
+    if selfT == 1:
+        txtDiag.insert(INSERT,"Self-Test successful\n\n")
+    else:
+        txtDiag.insert(INSERT,"Self-Test not successful\n\n")
+
+
+def clearTerminal(event):
+    txtDiag.delete('1.0', END)
+
+mainWindow = Tk()
+mainWindow.geometry("1000x540")
+mainWindow.title("Die Derde Wiel Remote Control Interface")
+mainWindow.configure(background="black")
+mainWindow.attributes('-fullscreen',True)
+
+f=Frame(mainWindow,width=320,height=50, bg="black")
+f.grid(row=0,column=0)
+f1=Frame(mainWindow,width=320,height=50, bg="black")
+f1.grid(row=0,column=1)
+f2=Frame(mainWindow,width=320,height=50, bg="black")
+f2.grid(row=0,column=3)
+f3=Frame(mainWindow,width=320,height= 80, bg="black")
+f3.grid(row=3,column=1)
+f4=Frame(mainWindow,width=320,height= 80, bg="black")
+f4.grid(row=5,column=1)
+
+logo = PhotoImage(file="1.PNG")
+lblLogo = Label(mainWindow, image=logo)
+lblLogo.grid(row=1)
+
+lblCurrentTemp = Label(mainWindow, text=("Current Water Temperature: 0 °C"), width = 38,fg ="black")
+lblCurrentTemp.grid(row=5,column=0)
+
+lblCurrentDrawn = Label(mainWindow, text="Current Drawn by Element: 0 A", width = 38,fg ="black")
+lblCurrentDrawn.grid(row=6,column=0)
+
+btnSetTemp = Button(mainWindow, text="Set Temperature", fg="black", width = 25)
+btnSetTemp.bind("<Button-1>",changeTemp)
+btnSetTemp.grid(row=2,column=1)
+
+btnSelfTest = Button(mainWindow, text="Self test", fg="black", width = 25)
+btnSelfTest.bind("<Button-1>",SelfTest)
+btnSelfTest.grid(row=3,column=1)
+btnSelfTest.config(state=DISABLED)
+
+btnActiDeactiControl = Button(mainWindow, text="Activate Automatic Control", fg ="black", width = 25)
+btnActiDeactiControl.bind("<Button-1>", ActivateDeactivate)
+btnActiDeactiControl.grid(row=4,column=1)
+btnActiDeactiControl.config(state=DISABLED)
+
+btnShutOff = Button(mainWindow, text="Shut-off Heating Element", fg ="black", width = 25)
+btnShutOff.bind("<Button-1>", ShutOff)
+btnShutOff.grid(row=5,column=1)
+btnShutOff.config(state=DISABLED)
+
+spinTemp = Spinbox(mainWindow, from_=60.0, to_=100.0, width = 26, format = '%2.1f', increment = 0.1)
+spinTemp.grid(row=2,column=0)
+
+spinYearDate = Spinbox(mainWindow, from_=2018, to_=2100, width = 10, format = '%4.0f', increment = 1)
+spinYearDate.grid(row=2,column=2)
+
+spinMonthDate = Spinbox(mainWindow, from_=1, to_=12, width = 10, format = '%2.0f', increment = 1)
+spinMonthDate.grid(row=3,column=2)
+
+txtDiag1 = scrolledtext.ScrolledText(mainWindow,width=45,height=13)
+txtDiag1.grid(row=1,column=2)
+
+btnDiagnostics = Button(mainWindow, text="Perform Diagnostic Test", fg="black",width=25)
+btnDiagnostics.bind("<Button-1>", performDiagnosis)
+btnDiagnostics.grid(row=0,column=2)
+btnDiagnostics.config(state=DISABLED)
+
+btnExit = Button(mainWindow, text="Exit", fg="black",width=25)
+btnExit.bind("<Button-1>", commandExit)
+btnExit.grid(row=0,column=3)
+
+btnClear = Button(mainWindow, text="Clear Terminal", fg="black",width=25)
+btnClear.bind("<Button-1>", clearTerminal)
+btnClear.grid(row=0,column=1)
+
+txtDiag = scrolledtext.ScrolledText(mainWindow,width=38,height=13)
+txtDiag.grid(row=1,column=1)
+
+btnStoreConfig = Button(mainWindow, text="Store Configuration",fg="black",width=25)
+btnStoreConfig.bind("<Button-1>", storeConfig)
+btnStoreConfig.grid(row=6,column=1)
+btnStoreConfig.config(state=DISABLED)
+
+lblHeatElementStatus = Label(mainWindow, text=("Heat Element Status: ON"), width = 38,fg="green")
+lblHeatElementStatus.grid(row=3,column=0)
+
+lblPowerSupplyStatus = Label(mainWindow, text=("Power Supply Status: ON"), width = 38,fg="green")
+lblPowerSupplyStatus.grid(row=4,column=2)
+
+lblCloudConnectivity = Label(mainWindow, text=("Cloud Connectivity: ON"), width = 38,fg="green")
+lblCloudConnectivity.grid(row=5,column=2)
+
+lblAutoControl = Label(mainWindow, text=("Automatic Control: OFF"), width = 38,fg="green")
+lblAutoControl.grid(row=6,column=2)
+
+lblConnection = Label(mainWindow, text=("Connection Status: Connected"), width = 38,fg="green")
+lblConnection.grid(row=4,column=0)
+
+#txtDiag.insert(INSERT,"Insert\n")
+#txtDiag.insert(INSERT,"fdsfsdf\n")
+
+i = 0
+
+with open('configuration.txt', 'r') as rFile:
+    for line in rFile:
+        spinTemp.delete(0, "end")
+        spinTemp.insert(0, line)
+        setTemp = line
+
+print(setTemp)
+
+# Disconnected State
+
+def disconnectedState(event = None):
+    global disconnect
+
+    try:
+            ser = serial.Serial(arduinoIDPath, baudrate=9600,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    bytesize=serial.EIGHTBITS,
+                    timeout=1
+                    )
+
+            if internet_on() == 1:
+                btnSelfTest.config(state=ACTIVE)
+                btnSetTemp.config(state=ACTIVE)
+                btnShutOff.config(state=ACTIVE)
+                btnStoreConfig.config(state=ACTIVE)
+                mainWindow.after(2000,programUpdate)
+                lblCloudConnectivity.configure(text="Cloud Connectivity: ON", fg = "green")
+                btnActiDeactiControl.config(state=ACTIVE)
+                btnActiDeactiControl.configure(text="Deactivate Automatic Control")
+                lblAutoControl.configure(text="Automatic Control: ON", fg = "green")
+                lblHeatElementStatus.configure(text="Heat Element Status: ON", fg = "green")
+                serSend = "AC1"
+                ser.write(serSend.encode())
+                txtDiag.insert(INSERT,"Automatic Control Activated\n\n")
+                lblConnection.configure(text="Connection Status: Connected", fg = "green")
+                disconnect = 0
+            else:
+                mainWindow.after(5000,disconnectedState)               
+    except:
+        mainWindow.after(5000,disconnectedState)
+
+# Inactive Mode
+
+def inactiveMode(event = None):
+    global setTemp
+    if iActiDeacti == 0:
+        mainWindow.after(500,inactiveMode)
+    else:
+        try:
+            ser = serial.Serial(arduinoIDPath, baudrate=9600,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            bytesize=serial.EIGHTBITS,
+            timeout=1
+            )                     
+                    
+            btnSelfTest.config(state=ACTIVE)
+            btnSetTemp.config(state=ACTIVE)
+            btnShutOff.config(state=ACTIVE)
+            btnStoreConfig.config(state=ACTIVE)
+            mainWindow.after(2000,programUpdate)
+
+        except:
+            print("cannot read file")
+        
+
+# Failed State
+def failedState(event = None):
+    
+    mainWindow.after(60000,failedState)
+    txtDiag.insert(INSERT,"Uploading data to the Cloud...\n")
+    try:
+        uploadCloud()
+        txtDiag.insert(INSERT,"Uploaded successfully!\n\n")
+        lblCloudConnectivity.configure(text="Cloud Connectivity: ON", fg = "green")
+    except:
+        txtDiag.insert(INSERT,"Cloud is not connected!\n")
+        blCloudConnectivity.configure(text="Cloud Connectivity: OFF", fg = "darkred")
+
+# Automatic Mode
+def programUpdate(event = None):
+    global temperature
+    global current
+    global i
+    global sessionCurrentValues
+    global sessionNumOfMeasurements
+    global boolShutoff
+    global disconnect
+    global failed
+    now = datetime.datetime.now()
+
+    if sessionNumOfMeasurements == 10:
+        btnDiagnostics.config(state=ACTIVE)
+    #Serial Receive
+    if i == 1:
+        failed = 0
+    
+    write = 0
+    try:
+        if ser.inWaiting() > 0:
+            line = ser.readline()
+            lineS = line.decode("utf-8")
+            ser.flushInput()
+            #txtDiag.insert(INSERT,lineS)
+                     
+            temperature = lineS[lineS.index("T")+1:len(lineS)-2]
+            if len(temperature) >= 3:
+                lblCurrentTemp.configure(text = "Current Water Temperature: " +temperature+ " °C")
+            
+            current = lineS[1:lineS.index("T")]
+            if len(current) >= 3:
+                lblCurrentDrawn.configure(text = "Current Drawn by Element: " +current+ " A")
+                sessionCurrentValues = sessionCurrentValues + float(current)
+                sessionNumOfMeasurements = sessionNumOfMeasurements + 1
+                write = 1
+
+    except:
+        print("No measured data received")
+        failed = failed + 1
+
+    try:
+        if write == 1 and boolShutoff == 0:
+            with open('measurements.txt' , 'a') as f:
+                f.write(str(now)[:21] + " ; " + current + " ; " + temperature + " ; " + str(setTemp) + "\n")
+    except:
+        print("Unable to write file")
+        
+    if boolShutoff == 0:
+        if i < 60:
+            i = i + 1
+            #txtDiag.insert(INSERT,i)
+            #txtDiag.insert(INSERT,"\n")
+
+        if i == 59:
+            txtDiag.insert(INSERT,"Uploading data to the Cloud...\n")
+        if i == 60:
+            i = 0
+            if disconnect == 0:
+                try:
+                    uploadCloud()
+                    txtDiag.insert(INSERT,"Uploaded successfully!\n\n")
+                    lblCloudConnectivity.configure(text="Cloud Connectivity: ON", fg = "green")
+                except:
+                    txtDiag.insert(INSERT,"Cloud is not connected!\n")
+                    lblCloudConnectivity.configure(text="Cloud Connectivity: OFF", fg = "darkred")
+
+                ser.flushInput()
+        
+        if i == 30:
+            txtDiag.insert(INSERT,"Checking communications...\n")
+            if (internet_on() == 1):
+                lblConnection.configure(text="Connection Status: Connected", fg = "green")
+                txtDiag.insert(INSERT,"Commucation is functional!\n\n")
+                disconnect = 0
+            else:
+                lblConnection.configure(text="Connection Status: Disconnected", fg = "darkred")
+                txtDiag.insert(INSERT,"Commucation is not functional!\n\n")
+                disconnect = 1
+            
+    print(str(now)[:21])
+
+    if failed >= 10:
+        txtDiag.insert(INSERT,"System failed\n")
+        txtDiag.insert(INSERT,"External maintenance is required.\n\n")
+        lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
+        lblCurrentTemp.configure(text = "Current Water Temperature: 0 °C")
+        btnActiDeactiControl.config(state=DISABLED)
+        txtDiag.insert(INSERT,"Automatic Control Deactivated\n\n")
+        mainWindow.after(1000,failedState)
+        lblAutoControl.configure(text="Automatic Control: OFF", fg = "darkred")
+        lblHeatElementStatus.configure(text="Heat Element Status: OFF", fg = "darkred")
+        btnSelfTest.config(state=DISABLED)
+        btnShutOff.config(state=DISABLED)
+        btnStoreConfig.config(state=DISABLED)
+        btnDiagnostics.config(state=DISABLED)
+        btnSetTemp.config(state=DISABLED)
+        lblPowerSupplyStatus.config(text="Power Supply Status: OFF", fg = "darkred")
+        
+    elif (disconnect == 1):
+        #btnSelfTest.config(state=DISABLED)
+        #btnShutOff.config(state=DISABLED)
+        #btnStoreConfig.config(state=DISABLED)
+        #btnDiagnostics.config(state=DISABLED)
+        #mainWindow.after(1000,disconnectedState)
+        lblCloudConnectivity.configure(text="Cloud Connectivity: OFF", fg = "darkred")
+        #lblAutoControl.configure(text="Automatic Control: OFF", fg = "darkred")
+        #lblHeatElementStatus.configure(text="Heat Element Status: OFF", fg = "darkred")
+        #serSend = "AC0"
+        #ser.write(serSend.encode())
+        #lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
+        #lblCurrentTemp.configure(text = "Current Water Temperature: 0 °C")
+        #btnActiDeactiControl.config(state=DISABLED)
+        #txtDiag.insert(INSERT,"Automatic Control Deactivated\n\n")
+        lblConnection.configure(text="Connection Status: Disconnected", fg = "darkred")
+        mainWindow.after(1000,programUpdate)
+        
+    elif iActiDeacti == 1:
+        mainWindow.after(1000,programUpdate)
+    else:
+        lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
+        lblCurrentTemp.configure(text = "Current Water Temperature: 0 °C")
+        btnSelfTest.config(state=DISABLED)
+        #btnSetTemp.config(state=DISABLED)
+        btnShutOff.config(state=DISABLED)
+        #btnStoreConfig.config(state=DISABLED)
+        btnDiagnostics.config(state=DISABLED)
+        mainWindow.after(500,inactiveMode)
+
+mainWindow.after(2000,inactiveMode)
+mainWindow.mainloop()
+
+
+
+
+#UART Protocols
+
+#Send
+# "S##" Setpoint of temperature
+# "AC#" Automatic control 1(ON) 0(OFF)
+# "OFF" Shut-Off heating element
+
+#Receive
+# "C###T###" Current and Temperature measurements
