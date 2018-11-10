@@ -131,7 +131,7 @@ def ActivateDeactivate(event):
         serSend = "AC0"
         ser.write(serSend.encode())
         lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
-        lblCurrentTemp.configure(text = "Current Water Temperature: 0 캜")
+        lblCurrentTemp.configure(text = "Current Water Temperature: 0 째C")
         txtDiag.insert(INSERT,"Automatic Control Deactivated\n\n")
 
 def ShutOff(event):
@@ -263,7 +263,7 @@ logo = PhotoImage(file="1.PNG")
 lblLogo = Label(mainWindow, image=logo)
 lblLogo.grid(row=1)
 
-lblCurrentTemp = Label(mainWindow, text=("Current Water Temperature: 0 캜"), width = 38,fg ="black")
+lblCurrentTemp = Label(mainWindow, text=("Current Water Temperature: 0 째C"), width = 38,fg ="black")
 lblCurrentTemp.grid(row=5,column=0)
 
 lblCurrentDrawn = Label(mainWindow, text="Current Drawn by Element: 0 A", width = 38,fg ="black")
@@ -449,7 +449,7 @@ def programUpdate(event = None):
                      
             temperature = lineS[lineS.index("T")+1:len(lineS)-2]
             if len(temperature) >= 3:
-                lblCurrentTemp.configure(text = "Current Water Temperature: " +temperature+ " 캜")
+                lblCurrentTemp.configure(text = "Current Water Temperature: " +temperature+ " 째C")
             
             current = lineS[1:lineS.index("T")]
             if len(current) >= 3:
@@ -507,7 +507,7 @@ def programUpdate(event = None):
         txtDiag.insert(INSERT,"System failed\n")
         txtDiag.insert(INSERT,"External maintenance is required.\n\n")
         lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
-        lblCurrentTemp.configure(text = "Current Water Temperature: 0 캜")
+        lblCurrentTemp.configure(text = "Current Water Temperature: 0 째C")
         btnActiDeactiControl.config(state=DISABLED)
         txtDiag.insert(INSERT,"Automatic Control Deactivated\n\n")
         mainWindow.after(1000,failedState)
@@ -532,7 +532,7 @@ def programUpdate(event = None):
         #serSend = "AC0"
         #ser.write(serSend.encode())
         #lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
-        #lblCurrentTemp.configure(text = "Current Water Temperature: 0 캜")
+        #lblCurrentTemp.configure(text = "Current Water Temperature: 0 째C")
         #btnActiDeactiControl.config(state=DISABLED)
         #txtDiag.insert(INSERT,"Automatic Control Deactivated\n\n")
         lblConnection.configure(text="Connection Status: Disconnected", fg = "darkred")
@@ -542,7 +542,7 @@ def programUpdate(event = None):
         mainWindow.after(1000,programUpdate)
     else:
         lblCurrentDrawn.configure(text = "Current Drawn by Element:  0 A")
-        lblCurrentTemp.configure(text = "Current Water Temperature: 0 캜")
+        lblCurrentTemp.configure(text = "Current Water Temperature: 0 째C")
         btnSelfTest.config(state=DISABLED)
         #btnSetTemp.config(state=DISABLED)
         btnShutOff.config(state=DISABLED)
